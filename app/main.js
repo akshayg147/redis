@@ -28,11 +28,11 @@ const server = net.createServer((connection) => {
                 console.log("in here")
                 if (validSetOptions.has(listStr[i])){
                     if (listStr[i].toUpperCase() === "EX") {
-                        finalValue["ttl"] = ['s',Number(listStr[i+2]),Date.now()]
+                        value["ttl"] = ['s',Number(listStr[i+2]),Date.now()]
                     }
 
                     else if (listStr[i].toUpperCase === "PX") {
-                        finalValue["ttl"] = ['ms',Number(listStr[i+2]),Date.now()]
+                        value["ttl"] = ['ms',Number(listStr[i+2]),Date.now()]
                     }
 
                     else if (listStr[i].toUpperCase === "NX"){
@@ -53,7 +53,7 @@ const server = net.createServer((connection) => {
 
                     else if (listStr[i].toUpperCase === "KEEPTTL"){
                         if (key in dict){
-                            finalValue["ttl"] = dict[key]["ttl"]
+                            value["ttl"] = dict[key]["ttl"]
                         }
                         else {
                             connection.write("Key does not exists!");
@@ -91,6 +91,11 @@ const server = net.createServer((connection) => {
                         }
                     }
 
+                }
+                else {
+                    connection.write("Options doesnt exists!");
+                    connectionFlag = 0
+                    connection.end()
                 }
             }
             if (connectionFlag) {
