@@ -19,88 +19,123 @@ const server = net.createServer((connection) => {
     }
 
     else if (cmd === "set") {
-            var value = {"value":NaN,"ttl":-1};
+            var value = {"value":null,"ttl":-1};
             var connectionFlag = 1
+            var isValidOption = 0
             const key = listStr[4]
-            value["value"] = listStr[5]+ '\r\n' + listStr[6] + '\r\n'
+            if(listStr[5] && listStr[6]){
+            value["value"] = listStr[5]+ '\r\n' + listStr[6] + '\r\n'}
             var returnStr = '+OK\r\n';
-            for (let i = 9; i <= listStr.length; i+=2){
-                console.log("in here")
+            for (let i=8 ; i < listStr.length-1; i+=2){
                 if (validSetOptions.has(listStr[i])){
                     if (listStr[i].toUpperCase() === "EX") {
+
+                        if(listStr[i+2] && Number.isInteger(Number(listStr[i+2]))){
                         value["ttl"] = ['s',Number(listStr[i+2]),Date.now()]
+                        i += 3
+                        }
+                        else{
+                            console.log("EX error")
+                            connectionFlag = 0
+                            connection.write("-ERR Please specify the time! \r\n"); 
+                        }
                     }
 
-                    else if (listStr[i].toUpperCase === "PX") {
+                    else if (listStr[i].toUpperCase() === "PX") {
+
+                        if(listStr[i+2] && Number.isInteger(Number(listStr[i+2]))){
                         value["ttl"] = ['ms',Number(listStr[i+2]),Date.now()]
+                        i += 3
+                        }
+                        else{
+                            connectionFlag = 0
+                            connection.write("-ERR Please specify the time! \r\n"); 
+                        }
                     }
 
-                    else if (listStr[i].toUpperCase === "NX"){
+                    else if (listStr[i].toUpperCase() === "NX"){
+
                         if (key in dict){
-                            connection.write("Key already exists");
+                            connection.write("-ERR Key already exists!\r\n");
                             connectionFlag = 0
-                            connection.end()
                         }
                     }
 
-                    else if (listStr[i].toUpperCase === "XX"){
+                    else if (listStr[i].toUpperCase() === "XX"){
+
                         if (!(key in dict)){
-                            connection.write("Key does not exists!");
+                            connection.write("-ERR Key does not exists!\r\n");
                             connectionFlag = 0
-                            connection.end()
                         }
                     }
 
-                    else if (listStr[i].toUpperCase === "KEEPTTL"){
+                    else if (listStr[i].toUpperCase() === "KEEPTTL"){
+
                         if (key in dict){
                             value["ttl"] = dict[key]["ttl"]
                         }
                         else {
-                            connection.write("Key does not exists!");
+                            connection.write("-ERR Key does not exists!\r\n");
                             connectionFlag = 0
-                            connection.end()
                         }
                     }
 
-                    else if (listStr[i].toUpperCase === "GET"){
+                    else if (listStr[i].toUpperCase() === "GET"){
+
                         if (key in dict){
+                            value["ttl"] = dict[key]["ttl"]
                             if (dict[key]["ttl"] != -1){
                                 unit = dict[key]["ttl"][0]
-                                if (unit === "s"){
+                                if (unit == "s"){
                                     var time = dict[key]["ttl"][1]
                                     const insertTime = dict[key]["ttl"][2]
                                     let timeDiffMillisec = (Date.now() - insertTime)/1000;
-                                    if (timeDiffMillisec >= time){
-                                        connection.write("Key has expired!");
+                                    console.log(timeDiffMillisec)
+                                    if (timeDiffMillisec > time){
+                                        delete dict[key];
+                                        connection.write("-ERR Key does not exists!\r\n");
                                         connectionFlag = 0
-                                        connection.end()
                                     }
                                 }
-                                else if (unit === "ms"){
+                                else if (unit == "ms"){
                                     var time = dict[key]["ttl"][1]
                                     const insertTime = dict[key]["ttl"][2]
                                     let timeDiffMillisec = Date.now() - insertTime;
-                                    if (timeDiffMillisec >= time){
-                                        connection.write("Key has expired!");
+                                    if (timeDiffMillisec > time){
+                                        delete dict[key]
+                                        connection.write("-ERR Key does not exists!\r\n");
                                         connectionFlag = 0
-                                        connection.end()
                                     }
                                 }
                             }
-                            returnStr = "$" + dict[key]["value"].length + "\r\n"+ dict[key]["values"] + "\r\n"
+                            returnStr = "$" + dict[key]["value"].length + "\r\n"+ dict[key]["value"] + "\r\n"
+                            console.log(returnStr);
+                        }
+                        else{
+                            connectionFlag = 0
+                            connection.write("-ERR Key does not exists!\r\n"); 
                         }
                     }
-
                 }
                 else {
-                    connection.write("Options doesnt exists!");
+                    connection.write("-ERR Options doesnt exists!\r\n");
                     connectionFlag = 0
-                    connection.end()
                 }
             }
-            if (connectionFlag) {
+
+            if (connectionFlag && value["value"]){
             dict[key] = value
-            connection.write(returnStr);  
+            console.log(dict)
+            connection.write(returnStr);
+            }
+
+            else{
+                console.log("here")
+                if (connectionFlag){
+                    connection.write("-ERR Unable to insert!\r\n"); 
+                }
+
+
             }
     }
 
@@ -121,7 +156,7 @@ const server = net.createServer((connection) => {
       })
 });
 
-process.on('exit', () => {
+server.on('exit', () => {
     console.log("Server closed gracefully.");
     server.close();
   })
