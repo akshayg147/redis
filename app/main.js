@@ -7,8 +7,6 @@ const server = net.createServer((connection) => {
     connection.on("data", (data) => {
     const listStr = data.toString().split('\r\n');
     const cmd = listStr[2].toLowerCase()
-    console.log(listStr.length)
-    console.log(listStr)
     if (cmd === 'ping') {
     connection.write('\+PONG\r\n');
     }
