@@ -7,6 +7,7 @@ const server = net.createServer((connection) => {
     connection.on("data", (data) => {
     const listStr = data.toString().split('\r\n');
     const cmd = listStr[2].toLowerCase()
+    console.log(listStr)
     if (cmd === 'ping') {
     connection.write('\+PONG\r\n');
     }
@@ -19,18 +20,20 @@ const server = net.createServer((connection) => {
     else if (cmd === "set") {
             var value = {"value":null,"ttl":-1};
             var connectionFlag = 1
-            var isValidOption = 0
+            var deleteKey = 0
+            var keyDNE = 0
             const key = listStr[4]
             if(listStr[5] && listStr[6]){
             value["value"] = listStr[5]+ '\r\n' + listStr[6] + '\r\n'}
             var returnStr = '+OK\r\n';
-            for (let i=8 ; i < listStr.length-1; i+=2){
+            for (let i=8 ; i < listStr.length; i+=2){
+                console.log(i)
                 if (validSetOptions.has(listStr[i])){
                     if (listStr[i].toUpperCase() === "EX") {
 
                         if(listStr[i+2] && Number.isInteger(Number(listStr[i+2]))){
                         value["ttl"] = ['s',Number(listStr[i+2]),Date.now()]
-                        i += 3
+                        i += 2
                         }
                         else{
                             console.log("EX error")
@@ -43,7 +46,7 @@ const server = net.createServer((connection) => {
 
                         if(listStr[i+2] && Number.isInteger(Number(listStr[i+2]))){
                         value["ttl"] = ['ms',Number(listStr[i+2]),Date.now()]
-                        i += 3
+                        i += 2
                         }
                         else{
                             connectionFlag = 0
@@ -52,7 +55,27 @@ const server = net.createServer((connection) => {
                     }
 
                     else if (listStr[i].toUpperCase() === "NX"){
-
+                        if (key in dict){
+                            if (dict[key]["ttl"] != -1){
+                                unit = dict[key]["ttl"][0]
+                                if (unit == "s"){
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = (Date.now() - insertTime)/1000;
+                                    if (timeDiffMillisec > time){
+                                        delete dict[key]
+                                    }
+                                }
+                                else if (unit == "ms"){
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = Date.now() - insertTime;
+                                    if (timeDiffMillisec > time){
+                                        delete dict[key]
+                                    }
+                                }
+                            }
+                        }
                         if (key in dict){
                             connection.write("-ERR Key already exists!\r\n");
                             connectionFlag = 0
@@ -62,24 +85,80 @@ const server = net.createServer((connection) => {
                     else if (listStr[i].toUpperCase() === "XX"){
 
                         if (!(key in dict)){
-                            connection.write("-ERR Key does not exists!\r\n");
+                            keyDNE = 1
                             connectionFlag = 0
+                        }
+                        else {
+                            if (dict[key]["ttl"] != -1){
+                                unit = dict[key]["ttl"][0]
+                                if (unit == "s"){
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = (Date.now() - insertTime)/1000;
+                                    console.log(timeDiffMillisec)
+                                    if (timeDiffMillisec > time){
+                                        // delete dict[key];
+                                        keyDNE = 1
+                                        deleteKey = 1
+                                        connectionFlag = 0
+                                    }
+                                }
+                                else if (unit == "ms"){
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = Date.now() - insertTime;
+                                    if (timeDiffMillisec > time){
+                                        // delete dict[key];
+                                        keyDNE = 1
+                                        deleteKey = 1
+                                        connectionFlag = 0
+                                    }
+                                }
+                            }
                         }
                     }
 
                     else if (listStr[i].toUpperCase() === "KEEPTTL"){
-
+                        console.log("KEEPTTL")
                         if (key in dict){
+                            if (dict[key]["ttl"] != -1){
+                                unit = dict[key]["ttl"][0]
+                                if (unit == "s"){
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = (Date.now() - insertTime)/1000;
+                                    if (timeDiffMillisec > time){
+                                        // delete dict[key];
+                                        keyDNE = 1
+                                        deleteKey = 1
+                                        connectionFlag = 0
+                                    }
+                                }
+                                else if (unit == "ms"){
+                                    console.log("1111111")
+                                    var time = dict[key]["ttl"][1]
+                                    const insertTime = dict[key]["ttl"][2]
+                                    let timeDiffMillisec = Date.now() - insertTime;
+                                    if (timeDiffMillisec > time){
+                                        console.log("222222")
+                                        // delete dict[key]
+                                        keyDNE = 1
+                                        deleteKey = 1
+                                        connectionFlag = 0
+                                    }
+                                }
+                            }
+                            if(connectionFlag){
                             value["ttl"] = dict[key]["ttl"]
+                            }
                         }
                         else {
-                            connection.write("-ERR Key does not exists!\r\n");
+                            keyDNE = 1
                             connectionFlag = 0
                         }
                     }
 
                     else if (listStr[i].toUpperCase() === "GET"){
-
                         if (key in dict){
                             value["ttl"] = dict[key]["ttl"]
                             if (dict[key]["ttl"] != -1){
@@ -90,8 +169,9 @@ const server = net.createServer((connection) => {
                                     let timeDiffMillisec = (Date.now() - insertTime)/1000;
                                     console.log(timeDiffMillisec)
                                     if (timeDiffMillisec > time){
-                                        delete dict[key];
-                                        connection.write("-ERR Key does not exists!\r\n");
+                                        // delete dict[key];
+                                        keyDNE = 1
+                                        deleteKey = 1
                                         connectionFlag = 0
                                     }
                                 }
@@ -100,8 +180,8 @@ const server = net.createServer((connection) => {
                                     const insertTime = dict[key]["ttl"][2]
                                     let timeDiffMillisec = Date.now() - insertTime;
                                     if (timeDiffMillisec > time){
-                                        delete dict[key]
-                                        connection.write("-ERR Key does not exists!\r\n");
+                                        keyDNE = 1
+                                        deleteKey = 1
                                         connectionFlag = 0
                                     }
                                 }
@@ -111,7 +191,7 @@ const server = net.createServer((connection) => {
                         }
                         else{
                             connectionFlag = 0
-                            connection.write("-ERR Key does not exists!\r\n"); 
+                            keyDNE = 1
                         }
                     }
                 }
@@ -120,7 +200,6 @@ const server = net.createServer((connection) => {
                     connectionFlag = 0
                 }
             }
-
             if (connectionFlag && value["value"]){
             dict[key] = value
             console.log(dict)
@@ -128,17 +207,42 @@ const server = net.createServer((connection) => {
             }
 
             else{
-                console.log("here")
+                console.log("Here buddy!")
+                if (deleteKey){
+                    delete dict[key]
+                }
+                if(keyDNE){
+                    connection.write("-ERR Key does not exists!\r\n");
+                }
                 if (connectionFlag){
                     connection.write("-ERR Unable to insert!\r\n"); 
                 }
-
-
             }
     }
 
     else if (cmd === "get") {
         const key = listStr[4]
+        if (key in dict){
+            if (dict[key]["ttl"] != -1){
+                unit = dict[key]["ttl"][0]
+                if (unit == "s"){
+                    var time = dict[key]["ttl"][1]
+                    const insertTime = dict[key]["ttl"][2]
+                    let timeDiffMillisec = (Date.now() - insertTime)/1000;
+                    if (timeDiffMillisec > time){
+                        delete dict[key];
+                    }
+                }
+                else if (unit == "ms"){
+                    var time = dict[key]["ttl"][1]
+                    const insertTime = dict[key]["ttl"][2]
+                    let timeDiffMillisec = Date.now() - insertTime;
+                    if (timeDiffMillisec > time){
+                        delete dict[key]
+                    }
+                }
+            }
+        }
         if (dict[key] && listStr.length == 6){
             connection.write(dict[key]["value"]); 
         }
