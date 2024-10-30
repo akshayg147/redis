@@ -1,7 +1,27 @@
 const net = require("net");
-
+const { configCMD } = require('./utility/config');
 const dict = {};
 const validSetOptions = new Set(["EX","PX","NX","XX","KEEPTTL","GET"]);
+const validCMDGetOptions = new Set();
+
+
+//formate the msg in RESP formate
+function formatMessage(text = null) {
+	if (text) return `+${text}\r\n`;
+	return `$-1\r\n`;
+}
+
+function formatConfigMessage(key = '', value = '') {
+	return `*2\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`;
+}
+
+const config = new Map();
+const arguments = process.argv.slice(2);
+const [fileDir, fileName] = [arguments[1] ?? null, arguments[3] ?? null];
+if (fileDir && fileName) {
+	config.set('dir', fileDir);
+	config.set('dbfilename', fileName);
+}
 
 const server = net.createServer((connection) => {
     connection.on("data", (data) => {
@@ -207,7 +227,6 @@ const server = net.createServer((connection) => {
             }
 
             else{
-                console.log("Here buddy!")
                 if (deleteKey){
                     delete dict[key]
                 }
@@ -249,6 +268,14 @@ const server = net.createServer((connection) => {
         else {
             connection.write('$-1\r\n'); 
         }
+    }
+
+    else if (cmd === "config"){
+        connection.write(configCMD(listStr,config));
+    }
+
+    else{
+        connection.write("-ERR Unknown Command!\r\n");
     }
 })
 
