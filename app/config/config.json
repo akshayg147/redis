@@ -1,0 +1,5 @@
+{
+    "snapshot":true,
+    "snapshotInterval": 5000,
+    "path": "/rdbdbstore/"
+}

@@ -1,9 +1,9 @@
 const net = require("net");
-const { configCMD } = require('./utility/config');
+const { configCMD } = require('./utility/formateMsg');
 const dict = {};
 const validSetOptions = new Set(["EX","PX","NX","XX","KEEPTTL","GET"]);
 const validCMDGetOptions = new Set();
-
+const logger = require('./logger')('server')
 
 //formate the msg in RESP formate
 function formatMessage(text = null) {
@@ -11,8 +11,8 @@ function formatMessage(text = null) {
 	return `$-1\r\n`;
 }
 
-function formatConfigMessage(key = '', value = '') {
-	return `*2\r\n$${key.length}\r\n${key}\r\n$${value.length}\r\n${value}\r\n`;
+function formatConfigMessage(value) {
+	return `$${value.length}\r\n${value}\r\n`;
 }
 
 const config = new Map();
@@ -274,6 +274,50 @@ const server = net.createServer((connection) => {
         connection.write(configCMD(listStr,config));
     }
 
+    else if (cmd === "lpush"){
+        const [,,,command,key,...elements] = listStr
+        const list = elements.filter(item => !isNaN(item) && item !== '');
+        list.reverse();
+        if(!dict[key]){
+            dict[key] = list;
+            connection.write(formatMessage("OK"))
+        }
+        else{
+            if (Array.isArray(dict[key])){
+                dict[key] = dict[key].concat(list);
+                connection.write(formatMessage("OK"));
+            }
+            else{
+                connection.write("-ERR Value is not a list!\r\n")
+            }
+        }
+    }
+
+    else if (cmd === "lrange") {
+        const [,,command,,key,,startIndex,,endIndex] = listStr;
+        console.log(command,key,startIndex,endIndex)
+        if (!(key in dict)){
+            connection.write('-ERR Key does not exists!\r\n')
+        }
+        else{
+        if (Array.isArray(dict[key])) {
+            const start = parseInt(startIndex, 10);
+            const end = parseInt(endIndex, 10);
+            const listLength = dict[key].length;
+            const validEnd = end >= listLength ? listLength - 1 : end;
+            const result = dict[key].slice(start, validEnd + 1);
+            var formattedResult = `*${result.length}\r\n`
+            for (let i=start; i<= validEnd; i+=1){
+                console.log(formatConfigMessage(dict[key][i]))
+                formattedResult += formatConfigMessage(dict[key][i])
+            }    
+            connection.write(formattedResult);
+        } else {
+            connection.write("-ERR Value is not a list!\r\n");
+        }
+    }
+    }
+    
     else{
         connection.write("-ERR Unknown Command!\r\n");
     }
@@ -290,7 +334,9 @@ server.on('exit', () => {
     server.close();
   })
 
-server.listen(6379, "127.0.0.1");
+server.listen(6379, "127.0.0.1", ()=>{
+    logger.log("Server is running at 127.0.0.1:6379 ")
+});
 
 server.on("error", (err) => {
     console.log("Server error:", err);
