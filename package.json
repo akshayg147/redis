@@ -2,6 +2,7 @@
   "name": "@codecrafters/redis",
   "version": "1.0.0",
   "dependencies": {
+    "minimatch": "^3.0.4",
     "net": "^1.0.2"
   }
 }

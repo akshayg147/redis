@@ -1,13 +1,12 @@
 const redis_main_const = {
-	REDIS_MAGIC_STRING: 5,
-	REDIS_VERSION: 4,
+    REDIS_MAGIC_STRING: "REDIS",
+    REDIS_VERSION: 0,
 };
 
 const OPCODES = {
 	EOF: 0xff,
 	SELECTDB: 0xfe,
 	EXPIRETIME: 0xfd,
-	EXPIRETIMEMS: 0xfc,
 	RESIZEDB: 0xfb,
 	AUX: 0xfa,
 };
