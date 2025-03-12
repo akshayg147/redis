@@ -75,6 +75,9 @@ function load(Slave,slavefilePath){
 }
 
 const server = net.createServer((connection) => {
+    let isRDBTransfer = false;
+    let slavePort = null;  // Add this variable declaration at the connection level
+    
     connection.on("data", (data) => {
     // console.log("cmd=>",data.toString())
     const listStr = data.toString().split('\r\n');
@@ -387,45 +390,96 @@ const server = net.createServer((connection) => {
         const dir = fileDir;
         const p = fileName;
         const filePath = dir + '/' + p
-        saveToRDB(dir,p,filePath,connection,dict,TTL)
-        connection.write(`+FULLRESYNC ${id} 0\r\n`)
+        
+        try {
+            // Fork process to save RDB first
+            const rdbWriter = fork('./utility/writeRDB.js');
+            
+            rdbWriter.on('error', (err) => {
+                console.error('RDB writer error:', err);
+                connection.write('-ERR Failed to save RDB\r\n');
+                rdbWriter.kill();
+            });
+            
+            rdbWriter.send({ dict, TTL, fileName: filePath });
+            
+            rdbWriter.on('message', (msg) => {
+                if (msg === 'done') {
+                    console.log("RDB save completed");
+                    connection.write(`+FULLRESYNC ${id} 0\r\n`);
+                    
+                    // Start RDB transfer in another fork
+                    const sendFile = fork('./utility/sendRDBfile.js');
+                    
+                    sendFile.on('error', (err) => {
+                        console.error('Send file error:', err);
+                        connection.write('-ERR Failed to transfer RDB\r\n');
+                        sendFile.kill();
+                    });
+                    
+                    sendFile.send({ 
+                        rdbFilePath: filePath,
+                        slavePort: port 
+                    });
+                    
+                    sendFile.on('message', (msg) => {
+                        if (msg === 'done') {
+                            console.log("RDB transfer completed");
+                            isDataDirty = false;
+                        } else if (msg === 'error') {
+                            console.error("RDB transfer failed");
+                            connection.write('-ERR Failed to transfer RDB\r\n');
+                        }
+                        sendFile.kill();
+                    });
+                }
+                rdbWriter.kill();
+            });
+        } catch (err) {
+            console.error('Error in PSYNC:', err);
+            connection.write('-ERR Internal server error\r\n');
+        }
     }
 
     else if (cmd.toUpperCase() === "START_RDB_TRANSFER") {
         isRDBTransfer = true;
-        const rdbFilePath = './tmp/redis-files/' + finalPort + '/RDB.rdb';
-        if (!fs.existsSync(rdbFilePath)) {
-            fs.mkdirSync(rdbFilePath, { recursive: true });
+        // Extract port from command if provided, or use a default
+        const cmdParts = data.toString().trim().split(' ');
+        slavePort = cmdParts[1] || '6379';  // Set the slavePort when command is received
+        
+        const rdbFilePath = `./tmp/redis-files/${slavePort}/dump.rdb`;
+        const rdbDir = path.dirname(rdbFilePath);
+        
+        if (!fs.existsSync(rdbDir)) {
+            fs.mkdirSync(rdbDir, { recursive: true });
         }
-        console.log("-----recievied the start rdb trans------")
+        console.log("Ready to receive RDB transfer");
+        connection.write('+OK\r\n');
     }
     else if(isRDBTransfer) {
-        const rdbFilePath = './tmp/redis-files/' + finalPort + '/RDB.rdb';
-        if (!fs.existsSync(rdbFilePath)) {
-            fs.mkdirSync(rdbFilePath, { recursive: true });
+        if (!slavePort) {
+            console.error('No slave port defined for RDB transfer');
+            connection.write('-ERR No slave port defined\r\n');
+            return;
         }
-        const writeStream = fs.createWriteStream(rdbFilePath);
-        if (connection.remoteAddress === masterPort){
-            connection.pipe(writeStream);
-            writeStream.on('finish', () => {
-                console.log('RDB file received and saved successfully!');
-                load(1,rdbFilePath);
-                writeStream.kill()
-                console.log('--------------From slave-------------')
-                console.log(dict)
-                console.log("-----------copied from master------------")
-            });
         
-            // Handle errors in the data transfer process
-            writeStream.on('error', (err) => {
-                console.error('Error during file transfer:', err);
-            });
-        isRDBTransfer = false;
-
-        }
-        else {
-            connection.write('-ERR not allowed!')
-        }
+        const rdbFilePath = `./tmp/redis-files/${slavePort}/dump.rdb`;
+        const writeStream = fs.createWriteStream(rdbFilePath);
+        
+        connection.pipe(writeStream);
+        
+        writeStream.on('finish', () => {
+            console.log('RDB file received and saved');
+            load(true, rdbFilePath);
+            isRDBTransfer = false;
+            connection.write('+OK\r\n');
+        });
+        
+        writeStream.on('error', (err) => {
+            console.error('Error saving RDB:', err);
+            isRDBTransfer = false;
+            connection.write('-ERR Failed to save RDB\r\n');
+        });
     }
     else{
         connection.write("-ERR Unknown Command!\r\n");

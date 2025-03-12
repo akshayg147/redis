@@ -1,31 +1,65 @@
 const fs = require('fs');
-const path = require('path');
+const net = require('net');
 
-function sendRDBToSlave(rdbFilePath, slaveConnection) {
-    const fileStream = fs.createReadStream(rdbFilePath);
-    slaveConnection.write("+START_RDB_TRANSFER\r\n")
-    console.log("hey there sendinf sending")
-    fileStream.on('open', () => {
-        fileStream.pipe(slaveConnection);
-    });
-    fileStream.on('error', (err) => {
-        console.error("Error reading RDB file:", err);
-        process.send('error');
-    });
+function sendRDBToSlave(rdbFilePath, slavePort) {
+    const client = new net.Socket();
+    let isConnected = false;
+    
+    const cleanup = () => {
+        if (isConnected) {
+            client.end();
+        }
+        // Only send message if process is still connected
+        if (process.connected) {
+            process.send('done');
+        }
+    };
 
-    slaveConnection.on('error', (err) => {
-        console.error("Error writing to slave socket:", err);
-        process.send('error');
-    });
+    client.connect(slavePort, '127.0.0.1', () => {
+        isConnected = true;
+        console.log('Connected to slave');
+        client.write("+START_RDB_TRANSFER\r\n");
+        
+        setTimeout(() => {
+            const fileStream = fs.createReadStream(rdbFilePath);
+            
+            fileStream.on('error', (err) => {
+                console.error('Error reading file:', err);
+                if (process.connected) {
+                    process.send('error');
+                }
+                cleanup();
+            });
 
-    slaveConnection.on('close', () => {
-        console.log("Slave socket closed");
+            fileStream.pipe(client);
+            
+            fileStream.on('end', () => {
+                console.log('File transfer complete');
+                cleanup();
+            });
+        }, 100);
+    });
+    
+    client.on('error', (err) => {
+        console.error('Connection error:', err);
+        if (process.connected) {
+            process.send('error');
+        }
+        cleanup();
     });
 }
 
-process.on('message', ({ rdbFilePath },connection) => {
-    console.log("Sending RDB file to slave...");
-    // const connection = new net.Socket({ fd: connectionFD });
-    sendRDBToSlave(rdbFilePath,connection);
-    process.send('done'); // Notify the parent process when done
+process.on('message', ({ rdbFilePath, slavePort }) => {
+    if (!rdbFilePath || !slavePort) {
+        console.error('Missing required parameters');
+        process.exit(1);
+    }
+    
+    console.log("Starting RDB transfer to slave...");
+    sendRDBToSlave(rdbFilePath, slavePort);
+});
+
+// Handle process disconnection
+process.on('disconnect', () => {
+    process.exit(0);
 });
